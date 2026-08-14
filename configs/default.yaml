@@ -1,1 +1,145 @@
+# ==========================================
+# Deep Learning Surveillance Configuration
+# ==========================================
 
+project:
+  name: "deep-learning-surveillance"
+  version: "1.0.0"
+
+
+# ==========================================
+# Dataset
+# ==========================================
+
+dataset:
+  root: "data"
+
+  train: "data/train"
+  validation: "data/val"
+  test: "data/test"
+
+  prepared: "data/behavior_prepared"
+
+  clip_length: 16
+  clip_stride: 8
+
+
+# ==========================================
+# Object Detection
+# ==========================================
+
+detection:
+  model: "weights/best.pt"
+
+  confidence_threshold: 0.50
+  iou_threshold: 0.45
+
+  classes:
+    - "knife"
+    - "scissor"
+    - "gun"
+
+
+# ==========================================
+# Behavior Analysis
+# ==========================================
+
+behavior:
+  model: "weights/behavior_best.pth"
+
+  classes:
+    - "standing"
+    - "walking"
+    - "running"
+    - "falling"
+    - "fighting"
+    - "loitering"
+    - "suspicious_object_handling"
+
+  confidence_threshold: 0.50
+
+  temporal:
+    clip_length: 16
+    sampling_rate: 2
+
+
+# ==========================================
+# Fusion
+# ==========================================
+
+fusion:
+  enabled: true
+
+  detection_weight: 0.50
+  behavior_weight: 0.50
+
+  suspicious_threshold: 0.70
+
+
+# ==========================================
+# Alert System
+# ==========================================
+
+alerts:
+  enabled: true
+
+  cooldown_seconds: 10
+
+  suspicious_objects:
+    - "knife"
+    - "scissor"
+    - "gun"
+
+  suspicious_behaviors:
+    - "fighting"
+    - "falling"
+    - "suspicious_object_handling"
+
+
+# ==========================================
+# Logging
+# ==========================================
+
+logging:
+  enabled: true
+
+  directory: "results/logs"
+
+  csv_file: "results/alerts/detection_log.csv"
+
+  save_alert_frames: true
+  alert_frame_directory: "results/frames"
+
+
+# ==========================================
+# Training
+# ==========================================
+
+training:
+  epochs: 50
+  batch_size: 4
+
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+
+  num_workers: 0
+
+  seed: 42
+
+  checkpoint:
+    directory: "weights"
+    filename: "behavior_best.pth"
+
+
+# ==========================================
+# Runtime
+# ==========================================
+
+runtime:
+  source: 0
+
+  display: true
+
+  save_output: true
+
+  output_directory: "results/runtime"
