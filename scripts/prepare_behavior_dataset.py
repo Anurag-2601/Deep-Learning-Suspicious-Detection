@@ -1,17 +1,12 @@
 """
-Prepare the surveillance behavior dataset for temporal training.
+Prepare the behavior dataset for temporal training.
 
-Expected input:
+The behavior dataset is organized into:
+    data/train/
+    data/val/
+    data/test/
 
-data/
-├── train/
-├── val/
-└── test/
-
-Each split should contain RGB frames and a COCO-style annotation JSON.
-
-The project documentation describes seven behavior classes:
-
+The project uses the following behavior classes:
     standing
     walking
     running
@@ -20,24 +15,23 @@ The project documentation describes seven behavior classes:
     loitering
     suspicious_object_handling
 
-The output is a manifest describing temporal clips.
+This script reads COCO-style annotations and creates temporal
+clip manifests for the SlowFast behavior-training pipeline.
 
 Output:
-
-data/behavior_prepared/
-├── train_manifest.json
-├── val_manifest.json
-└── test_manifest.json
+    data/behavior_prepared/
+        train_manifest.json
+        val_manifest.json
+        test_manifest.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 
 BEHAVIOR_CLASSES = [
@@ -53,7 +47,7 @@ BEHAVIOR_CLASSES = [
 
 @dataclass
 class FrameRecord:
-    """Metadata for one annotated frame."""
+    """Information associated with one dataset frame."""
 
     image_id: int
     file_name: str
@@ -63,7 +57,7 @@ class FrameRecord:
 
 @dataclass
 class ClipRecord:
-    """Metadata for one temporal behavior clip."""
+    """A temporal sequence used by the behavior model."""
 
     clip_id: str
     split: str
@@ -75,17 +69,14 @@ class ClipRecord:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Prepare COCO-style surveillance frames "
-            "for temporal behavior training."
-        )
+        description="Prepare temporal behavior clips."
     )
 
     parser.add_argument(
         "--data-root",
         type=Path,
         default=Path("data"),
-        help="Root directory containing train/val/test.",
+        help="Root directory containing train, val and test.",
     )
 
     parser.add_argument(
@@ -99,14 +90,14 @@ def parse_args() -> argparse.Namespace:
         "--clip-length",
         type=int,
         default=16,
-        help="Number of consecutive frames per clip.",
+        help="Number of frames in each temporal clip.",
     )
 
     parser.add_argument(
         "--stride",
         type=int,
         default=8,
-        help="Sliding-window stride between clips.",
+        help="Sliding-window stride.",
     )
 
     return parser.parse_args()
@@ -116,11 +107,7 @@ def find_annotation_file(
     split_directory: Path,
 ) -> Path:
     """
-    Locate a COCO annotation JSON file.
-
-    Supports common Roboflow-style names such as:
-        _annotations.coco.json
-        annotations.json
+    Find the COCO annotation JSON associated with a dataset split.
     """
 
     candidates = [
@@ -140,7 +127,7 @@ def find_annotation_file(
         return json_files[0]
 
     raise FileNotFoundError(
-        f"Could not identify a COCO annotation file in "
+        f"No unambiguous COCO annotation file found in "
         f"{split_directory}"
     )
 
@@ -148,35 +135,50 @@ def find_annotation_file(
 def load_coco(
     annotation_file: Path,
 ) -> dict:
+    """Load and validate the COCO annotation file."""
+
     with annotation_file.open(
         "r",
         encoding="utf-8",
     ) as file:
-        data = json.load(file)
+        coco = json.load(file)
 
-    required_keys = {
+    required = {
         "images",
         "annotations",
         "categories",
     }
 
-    missing = required_keys - set(data.keys())
+    missing = required - set(coco)
 
     if missing:
         raise ValueError(
-            f"Invalid COCO annotation file "
-            f"{annotation_file}. Missing: {missing}"
+            f"Invalid COCO annotation file. "
+            f"Missing fields: {sorted(missing)}"
         )
 
-    return data
+    return coco
+
+
+def normalize_class_name(
+    name: str,
+) -> str:
+    """Normalize annotation class names."""
+
+    return (
+        name.strip()
+        .lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+    )
 
 
 def build_category_map(
     coco: dict,
 ) -> Dict[int, str]:
-    """Build category_id -> class_name mapping."""
+    """Create category_id -> normalized class name mapping."""
 
-    category_map = {}
+    category_map: Dict[int, str] = {}
 
     for category in coco["categories"]:
 
@@ -184,37 +186,49 @@ def build_category_map(
             category["id"]
         )
 
-        category_name = (
+        name = normalize_class_name(
             category["name"]
-            .strip()
-            .lower()
-            .replace(" ", "_")
         )
 
         category_map[
             category_id
-        ] = category_name
+        ] = name
 
     return category_map
+
+
+def build_annotations_by_image(
+    coco: dict,
+) -> Dict[int, list]:
+    """Group annotations by image ID."""
+
+    annotations_by_image: Dict[int, list] = {}
+
+    for annotation in coco["annotations"]:
+
+        image_id = int(
+            annotation["image_id"]
+        )
+
+        annotations_by_image.setdefault(
+            image_id,
+            [],
+        ).append(annotation)
+
+    return annotations_by_image
 
 
 def build_frame_records(
     coco: dict,
     category_map: Dict[int, str],
 ) -> List[FrameRecord]:
-    """
-    Convert COCO image/annotation entries into frame records.
-    """
+    """Convert COCO records into frame-level records."""
 
-    annotations_by_image = defaultdict(list)
+    annotations_by_image = (
+        build_annotations_by_image(coco)
+    )
 
-    for annotation in coco["annotations"]:
-
-        annotations_by_image[
-            int(annotation["image_id"])
-        ].append(annotation)
-
-    records = []
+    records: List[FrameRecord] = []
 
     for image in coco["images"]:
 
@@ -229,8 +243,8 @@ def build_frame_records(
             )
         )
 
-        category_ids = []
-        track_ids = []
+        category_ids: List[int] = []
+        track_ids: List[int] = []
 
         for annotation in annotations:
 
@@ -239,7 +253,6 @@ def build_frame_records(
             )
 
             if category_id in category_map:
-
                 category_ids.append(
                     category_id
                 )
@@ -248,7 +261,9 @@ def build_frame_records(
 
                 try:
                     track_ids.append(
-                        int(annotation["track_id"])
+                        int(
+                            annotation["track_id"]
+                        )
                     )
                 except (
                     TypeError,
@@ -268,36 +283,35 @@ def build_frame_records(
     return records
 
 
-def choose_behavior_label(
+def get_behavior_label(
     record: FrameRecord,
     category_map: Dict[int, str],
 ) -> Optional[str]:
     """
-    Determine the behavior label for a frame.
+    Get the behavior class associated with a frame.
 
-    The category names come from the project's documented
-    behavior taxonomy.
+    Frames without one of the project's behavior classes
+    are excluded from temporal behavior clips.
     """
 
     labels = []
 
     for category_id in record.category_ids:
 
-        category_name = category_map.get(
+        class_name = category_map.get(
             category_id
         )
 
-        if category_name in BEHAVIOR_CLASSES:
-
+        if class_name in BEHAVIOR_CLASSES:
             labels.append(
-                category_name
+                class_name
             )
 
     if not labels:
         return None
 
-    # Deterministic selection if multiple behavior
-    # annotations exist on the same frame.
+    # Keep the selection deterministic when multiple
+    # behavior annotations occur in a frame.
     return sorted(labels)[0]
 
 
@@ -305,45 +319,45 @@ def resolve_frame_path(
     split_directory: Path,
     file_name: str,
 ) -> Path:
-    """
-    Resolve an image filename within the split directory.
-    """
+    """Resolve a frame filename inside a dataset split."""
 
-    direct = (
-        split_directory
-        / file_name
+    direct_path = (
+        split_directory / file_name
     )
 
-    if direct.exists():
-        return direct
+    if direct_path.exists():
+        return direct_path
+
+    filename = Path(file_name).name
 
     matches = list(
         split_directory.rglob(
-            Path(file_name).name
+            filename
         )
     )
-
-    if len(matches) == 1:
-        return matches[0]
 
     if not matches:
         raise FileNotFoundError(
             f"Frame not found: {file_name}"
         )
 
-    raise RuntimeError(
-        f"Multiple frames found for: {file_name}"
-    )
+    if len(matches) > 1:
+        raise RuntimeError(
+            f"Multiple files found for: {file_name}"
+        )
+
+    return matches[0]
 
 
-def sort_records(
+def sort_frames(
     records: List[FrameRecord],
 ) -> List[FrameRecord]:
     """
-    Sort frames deterministically.
+    Provide deterministic frame ordering.
 
-    COCO image IDs are used when no explicit frame
-    ordering is available.
+    Image IDs are used as the ordering key because the exact
+    temporal metadata structure of the exported dataset is
+    not assumed here.
     """
 
     return sorted(
@@ -361,19 +375,19 @@ def generate_clips(
     stride: int,
 ) -> List[ClipRecord]:
     """
-    Generate temporal clips using a sliding window.
+    Generate fixed-length temporal clips.
 
-    A clip receives a behavior label when the frames in
-    the window provide a consistent behavior label.
+    A clip is retained only when all frames in the window
+    have the same behavior label.
     """
 
-    records = sort_records(records)
+    records = sort_frames(records)
 
-    labeled_records = []
+    labeled_frames = []
 
     for record in records:
 
-        label = choose_behavior_label(
+        label = get_behavior_label(
             record,
             category_map,
         )
@@ -386,7 +400,7 @@ def generate_clips(
             record.file_name,
         )
 
-        labeled_records.append(
+        labeled_frames.append(
             (
                 record,
                 label,
@@ -394,20 +408,23 @@ def generate_clips(
             )
         )
 
-    clips = []
+    clips: List[ClipRecord] = []
 
-    clip_counter = 0
+    clip_index = 0
+
+    if len(labeled_frames) < clip_length:
+        return clips
 
     for start in range(
         0,
-        len(labeled_records)
+        len(labeled_frames)
         - clip_length
         + 1,
         stride,
     ):
 
-        window = labeled_records[
-            start : start + clip_length
+        window = labeled_frames[
+            start:start + clip_length
         ]
 
         labels = [
@@ -415,25 +432,24 @@ def generate_clips(
             for item in window
         ]
 
-        # Require temporal consistency.
         if len(set(labels)) != 1:
             continue
 
         label = labels[0]
 
-        records_in_window = [
+        frame_records = [
             item[0]
             for item in window
         ]
 
-        paths_in_window = [
+        frame_paths = [
             str(item[2])
             for item in window
         ]
 
         track_ids = []
 
-        for record in records_in_window:
+        for record in frame_records:
             track_ids.extend(
                 record.track_ids
             )
@@ -448,20 +464,20 @@ def generate_clips(
             ClipRecord(
                 clip_id=(
                     f"{split_name}_"
-                    f"{clip_counter:06d}"
+                    f"{clip_index:06d}"
                 ),
                 split=split_name,
                 label=label,
-                frame_paths=paths_in_window,
+                frame_paths=frame_paths,
                 frame_ids=[
                     record.image_id
-                    for record in records_in_window
+                    for record in frame_records
                 ],
                 track_id=track_id,
             )
         )
 
-        clip_counter += 1
+        clip_index += 1
 
     return clips
 
@@ -470,6 +486,7 @@ def save_manifest(
     clips: List[ClipRecord],
     output_file: Path,
 ) -> None:
+    """Save clip metadata as JSON."""
 
     output_file.parent.mkdir(
         parents=True,
@@ -500,6 +517,7 @@ def process_split(
     clip_length: int,
     stride: int,
 ) -> int:
+    """Prepare one dataset split."""
 
     split_directory = (
         data_root / split_name
@@ -507,7 +525,7 @@ def process_split(
 
     if not split_directory.exists():
         raise FileNotFoundError(
-            f"Missing dataset split: "
+            f"Dataset split does not exist: "
             f"{split_directory}"
         )
 
@@ -517,22 +535,12 @@ def process_split(
         )
     )
 
-    print(
-        f"[INFO] {split_name}: "
-        f"{annotation_file}"
-    )
-
     coco = load_coco(
         annotation_file
     )
 
     category_map = build_category_map(
         coco
-    )
-
-    print(
-        f"[INFO] Categories: "
-        f"{category_map}"
     )
 
     records = build_frame_records(
@@ -561,30 +569,24 @@ def process_split(
 
     print(
         f"[INFO] {split_name}: "
-        f"{len(records)} frames → "
+        f"{len(records)} frames -> "
         f"{len(clips)} clips"
-    )
-
-    print(
-        f"[INFO] Manifest: "
-        f"{output_file}"
     )
 
     return len(clips)
 
 
 def main() -> None:
-
     args = parse_args()
 
     if args.clip_length <= 0:
         raise ValueError(
-            "--clip-length must be > 0"
+            "clip-length must be greater than zero."
         )
 
     if args.stride <= 0:
         raise ValueError(
-            "--stride must be > 0"
+            "stride must be greater than zero."
         )
 
     total_clips = 0
@@ -603,7 +605,6 @@ def main() -> None:
             stride=args.stride,
         )
 
-    print()
     print(
         f"[INFO] Total generated clips: "
         f"{total_clips}"
