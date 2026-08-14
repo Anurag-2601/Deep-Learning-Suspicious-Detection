@@ -1,0 +1,144 @@
+# ==============================
+# Python
+# ==============================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.so
+
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+
+pip-wheel-metadata/
+share/python-wheels/
+
+*.egg-info/
+.installed.cfg
+*.egg
+
+MANIFEST
+
+
+# ==============================
+# Virtual Environments
+# ==============================
+
+.venv/
+venv/
+env/
+ENV/
+
+.env
+.env.*
+
+
+# ==============================
+# IDE / Editors
+# ==============================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+.DS_Store
+
+
+# ==============================
+# Jupyter
+# ==============================
+
+.ipynb_checkpoints/
+
+
+# ==============================
+# Datasets
+# ==============================
+
+data/train/*
+data/val/*
+data/test/*
+
+# Keep dataset directories
+!data/train/.gitkeep
+!data/val/.gitkeep
+!data/test/.gitkeep
+
+
+# ==============================
+# Model Weights
+# ==============================
+
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+weights/*.engine
+
+# Keep directory
+!weights/.gitkeep
+
+
+# ==============================
+# Runtime Outputs
+# ==============================
+
+results/runtime/*
+results/logs/*
+results/alerts/*
+results/frames/*
+
+# Keep result directory structure
+!results/runtime/.gitkeep
+!results/logs/.gitkeep
+!results/alerts/.gitkeep
+!results/frames/.gitkeep
+
+
+# ==============================
+# Generated Dataset Manifests
+# ==============================
+
+data/behavior_prepared/
+
+
+# ==============================
+# Experiment Outputs
+# ==============================
+
+runs/
+wandb/
+tensorboard/
+mlruns/
+
+
+# ==============================
+# Temporary Files
+# ==============================
+
+*.tmp
+*.temp
+*.cache
+
+*.log
+
+
+# ==============================
+# OS Files
+# ==============================
+
+Thumbs.db
+ehthumbs.db
+Desktop.ini
